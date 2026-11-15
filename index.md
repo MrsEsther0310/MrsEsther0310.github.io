@@ -1,8 +1,8 @@
 ---
 layout: home
-title: 首页
+title: Home
 ---
 
-# 欢迎来到我的博客
+# Welcome to My Blog
 
-记录学习与工作中的思考、收获和实践。
+Reflections, insights, and practical lessons from my studies and work.
