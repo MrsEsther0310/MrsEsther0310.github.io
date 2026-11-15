@@ -13,9 +13,9 @@ This article asks a testable architectural question: **when does compressing his
 
 ## 1. The encoder's input and output contract
 
-Let A be the number of dynamic agents, T the number of observed time steps, L the number of map elements, and D the hidden dimension. The inputs are an ordered agent history X = {x_(a,t)} and a map set M = {m_l}. An agent state may include displacement, speed, heading, class, and a validity mask. A map element may describe a lane segment, boundary, stop line, intersection, or traffic signal. Exact fields vary by dataset, but time remains ordered, agent count varies, and the map contains geometric and sometimes topological relations.
+Let $A$ be the number of dynamic agents, $T$ the number of observed time steps, $L$ the number of map elements, and $D$ the hidden dimension. The inputs are an ordered agent history $X = \{x_{a,t}\}$ and a map set $M = \{m_l\}$. An agent state may include displacement, speed, heading, class, and a validity mask. A map element may describe a lane segment, boundary, stop line, intersection, or traffic signal. Exact fields vary by dataset, but time remains ordered, agent count varies, and the map contains geometric and sometimes topological relations.
 
-The encoder may return one summary vector per agent, H_agent in R^(A x D), or a representation indexed by both agent and time, H_scene in R^(A x T x D). Both can encode history and interaction. Their difference is the interface left for later modules: the first requires those modules to read history through a fixed-length summary, whereas the second permits access to time-indexed features. The central comparison is therefore when time is summarized and whether cross-agent information is exchanged before or after that step.
+The encoder may return one summary vector per agent, $H_{\text{agent}} \in \mathbb{R}^{A \times D}$, or a representation indexed by both agent and time, $H_{\text{scene}} \in \mathbb{R}^{A \times T \times D}$. Both can encode history and interaction. Their difference is the interface left for later modules: the first requires those modules to read history through a fixed-length summary, whereas the second permits access to time-indexed features. The central comparison is therefore when time is summarized and whether cross-agent information is exchanged before or after that step.
 
 ## 2. HiVT: agent-centered hierarchical encoding
 
@@ -23,15 +23,19 @@ HiVT divides a scene into local regions centered on individual agents. For each 
 
 The local stage has a definite order. First, agent-agent interaction is computed separately at each observed time step. Second, a temporal Transformer reads the resulting sequence and updates an appended learnable summary token. Third, at the current time, that token queries lane segments through agent-lane attention. Only after these steps does global agent interaction occur. Prediction modes are expanded by the decoder; the local encoder is not rerun for every mode.
 
-For consistency with Scene Transformer, I write A for the agent count that the HiVT paper denotes by N. The focal agent's orientation is estimated from its final displacement. The same rotation R_i is used for all its historical time steps. Geometric vectors are multiplied by R_i transposed so they are expressed in the focal agent's heading frame.
+For consistency with Scene Transformer, I write $A$ for the agent count that the HiVT paper denotes by $N$. The focal agent's orientation is estimated from its final displacement. The same rotation $R_i$ is used for all its historical time steps. Geometric vectors are multiplied by $R_i^\top$ so they are expressed in the focal agent's heading frame.
 
 ### 2.1 Spatial interaction at each time step
 
 At time t, a focal agent i attends to neighbors j inside a local radius. The focal embedding uses its displacement and attributes. Each neighbor embedding also includes the agent-agent relative position:
 
-z_(i,t) = phi_center(R_i^T (p_(i,t) - p_(i,t-1)), a_i)
+$$
+z_{i,t} = \phi_{\text{center}}\left(R_i^\top (p_{i,t} - p_{i,t-1}), a_i\right)
+$$
 
-z_(ij,t) = phi_nbr(R_i^T (p_(j,t) - p_(j,t-1)), R_i^T (p_(j,t) - p_(i,t)), a_j)
+$$
+z_{ij,t} = \phi_{\text{nbr}}\left(R_i^\top (p_{j,t} - p_{j,t-1}), R_i^\top (p_{j,t} - p_{i,t}), a_j\right)
+$$
 
 The relative position is part of the neighbor embedding, rather than an unrelated feature appended after attention. The center supplies the query, and neighbors supply keys and values. Attention is normalized over the neighbor set. HiVT then uses a gate to mix the center representation with the aggregated environmental message, followed by an MLP, LayerNorm, and residual connections. If an agent is invisible at a time step, geometry is first zero-filled and then replaced by a learnable padding token before temporal modeling.
 
@@ -43,15 +47,17 @@ The spatial embeddings for one agent are placed in time order, with a learnable 
 
 At the current time T, the summary token queries nearby lane segments. A lane embedding combines its direction, its position relative to the focal agent, and semantic attributes:
 
-u_(i,xi) = phi_lane(R_i^T (p_(xi,1) - p_(xi,0)), R_i^T (p_(xi,0) - p_(i,T)), a_xi)
+$$
+u_{i,\xi} = \phi_{\text{lane}}\left(R_i^\top (p_{\xi,1} - p_{\xi,0}), R_i^\top (p_{\xi,0} - p_{i,T}), a_\xi\right)
+$$
 
 The first geometric term is the lane segment's direction; the second is the lane start point relative to agent i. Both use the same focal frame. The lane MLP output supplies the attention keys and values. Attention and gating follow the pattern used for agent-agent interaction, after which an MLP produces the local agent embedding.
 
 ### 2.4 Global interaction and modal decoding
 
-The global module passes information between agent vectors using current-time relative position and heading difference. Its pairwise relation includes R_i^T (p_(j,T) - p_(i,T)), cos(theta_j - theta_i), and sin(theta_j - theta_i). Unlike the earlier local agent-agent stage, this pairwise embedding is concatenated with the neighbor vector for the global attention keys and values. The dense global relation has O(A^2) pairwise scale.
+The global module passes information between agent vectors using current-time relative position and heading difference. Its pairwise relation includes $R_i^\top (p_{j,T} - p_{i,T})$, $\cos(\theta_j - \theta_i)$, and $\sin(\theta_j - \theta_i)$. Unlike the earlier local agent-agent stage, this pairwise embedding is concatenated with the neighbor vector for the global attention keys and values. The dense global relation has $O(A^2)$ pairwise scale.
 
-The decoder receives local and global vectors. Each mode-specific head predicts future positions and Laplace scales in the agent's local frame; another head predicts mixture weights. The reported regression tensor has shape [F, A, H, 4], where F is the number of modes, H the prediction horizon, and the final dimension covers two position coordinates and their scales. The local and global encoders do not repeat for each mode.
+The decoder receives local and global vectors. Each mode-specific head predicts future positions and Laplace scales in the agent's local frame; another head predicts mixture weights. The reported regression tensor has shape $[F, A, H, 4]$, where $F$ is the number of modes, $H$ the prediction horizon, and the final dimension covers two position coordinates and their scales. The local and global encoders do not repeat for each mode.
 
 Translation invariance follows from displacements and relative positions. Rotating vectors into each focal agent's heading frame provides the corresponding rotational treatment. Position differences alone remove translation, not rotation. Local-frame trajectory outputs must be rotated and translated back before comparison in scene coordinates.
 
@@ -61,11 +67,11 @@ Translation invariance follows from displacements and relative positions. Rotati
 
 ## 3. Scene Transformer: keeping a spatiotemporal tensor
 
-Scene Transformer uses a scene-centered coordinate frame and maintains an agent-time tensor with shape [A, T, D] through its encoder. Static road polylines are summarized with PointNet. Elements whose location is static but state changes over time, such as traffic lights, receive a separate dynamic-road representation. Positions are transformed relative to a common scene reference and receive sinusoidal position encodings. HiVT also transforms coordinates, but it uses the heading frame of each focal agent for spatial relations instead of one frame shared by the scene.
+Scene Transformer uses a scene-centered coordinate frame and maintains an agent-time tensor with shape $[A, T, D]$ through its encoder. Static road polylines are summarized with PointNet. Elements whose location is static but state changes over time, such as traffic lights, receive a separate dynamic-road representation. Positions are transformed relative to a common scene reference and receive sinusoidal position encodings. HiVT also transforms coordinates, but it uses the heading frame of each focal agent for spatial relations instead of one frame shared by the scene.
 
 ### 3.1 Alternating attention over time and agents
 
-Flattening all A x T tokens into one dense self-attention operation would produce a score matrix of quadratic size in AT. Scene Transformer factorizes the exchange: a temporal layer fixes the agent and attends over its time steps; an agent layer fixes the time and attends over agents. These layers alternate. Each remains a standard Transformer block with feed-forward processing, residual connections, and normalization. Their outputs communicate across axes over successive layers; they are not two isolated models.
+Flattening all $A \times T$ tokens into one dense self-attention operation would produce a score matrix of quadratic size in $AT$. Scene Transformer factorizes the exchange: a temporal layer fixes the agent and attends over its time steps; an agent layer fixes the time and attends over agents. These layers alternate. Each remains a standard Transformer block with feed-forward processing, residual connections, and normalization. Their outputs communicate across axes over successive layers; they are not two isolated models.
 
 The time axis also helps maintain identity. All time steps belonging to one agent stay on the same axis without a separate agent identifier. Under identical masking patterns, a fully pooled set of masked tokens could otherwise become indistinguishable. Factorization thus provides both computational savings and an inductive bias about temporal identity.
 
@@ -77,7 +83,7 @@ The mathematical operation is the standard scaled attention: apply softmax to th
 
 ### 3.3 Visibility masks define the prediction task
 
-Scene Transformer's time axis can include future steps to be completed. Visibility masks specify the task: marginal prediction exposes observed history and masks future states; conditional marginal prediction additionally exposes the ego vehicle's full future trajectory in the paper's setup; goal-conditioned prediction exposes an ego goal state. The encoder retains [A, T, D], while multiple joint futures enter during decoding. Axial attention alone does not create conditional prediction. The conditioning information must be exposed by the task mask and supported by training losses.
+Scene Transformer's time axis can include future steps to be completed. Visibility masks specify the task: marginal prediction exposes observed history and masks future states; conditional marginal prediction additionally exposes the ego vehicle's full future trajectory in the paper's setup; goal-conditioned prediction exposes an ego goal state. The encoder retains $[A, T, D]$, while multiple joint futures enter during decoding. Axial attention alone does not create conditional prediction. The conditioning information must be exposed by the task mask and supported by training losses.
 
 ![Scene Transformer information flow](/assets/figures/scene_transformer_en.png)
 
@@ -98,9 +104,9 @@ The most useful dividing line is whether a later cross-agent module can still ac
 
 ## 5. Complexity is not automatically linear
 
-Dense self-attention over agent-time tokens has O((AT)^2) score scale. A temporal layer in Scene Transformer costs O(AT^2), an agent layer O(TA^2), and per-time-step road cross-attention adds roughly O(TAG) for G road embeddings. Factorization removes the A^2T^2 term but each axis still contains a quadratic component.
+Dense self-attention over agent-time tokens has $O((AT)^2)$ score scale. A temporal layer in Scene Transformer costs $O(AT^2)$, an agent layer $O(TA^2)$, and per-time-step road cross-attention adds roughly $O(TAG)$ for $G$ road embeddings. Factorization removes the $A^2T^2$ term but each axis still contains a quadratic component.
 
-HiVT describes local encoding with terms corresponding to temporal attention, per-time-step local agent interaction, and agent-lane interaction. If local neighborhoods are bounded by k agents and ell lane segments, these terms can be written O(AT^2 + TAk + A ell), with a separate O(A^2) global interaction term. Actual runtime also depends on graph construction, sparse aggregation, memory traffic, padding, hidden width, precision, and hardware. Neither fewer edges nor a more regular tensor alone establishes lower end-to-end latency.
+HiVT describes local encoding with terms corresponding to temporal attention, per-time-step local agent interaction, and agent-lane interaction. If local neighborhoods are bounded by $k$ agents and $\ell$ lane segments, these terms can be written $O(AT^2 + TAk + A\ell)$, with a separate $O(A^2)$ global interaction term. Actual runtime also depends on graph construction, sparse aggregation, memory traffic, padding, hidden width, precision, and hardware. Neither fewer edges nor a more regular tensor alone establishes lower end-to-end latency.
 
 ## 6. Tests that can isolate encoder behavior
 
@@ -110,7 +116,7 @@ The papers report motion-prediction results, but final metrics also depend on in
 
 **Map dependence.** Keep agent histories fixed while changing merge topology, lane direction, or signal state. Compare encoded features and predictions. Remove geometry and semantics separately to detect reliance on one unstable field.
 
-**Geometric consistency.** Apply the same rigid translation or rotation to a scene, transform predicted trajectories back, and compare. Features may be designed to be invariant; trajectories in scene coordinates should be equivariant: f(gX) = g f(X). HiVT local-frame outputs must be returned to the scene frame before this test.
+**Geometric consistency.** Apply the same rigid translation or rotation to a scene, transform predicted trajectories back, and compare. Features may be designed to be invariant; trajectories in scene coordinates should be equivariant: $f(gX) = g f(X)$. HiVT local-frame outputs must be returned to the scene frame before this test.
 
 **Missing-data robustness.** Remove selected history frames, agents, or map elements. Verify that padding masks block invalid tokens and that empty neighborhoods remain well-defined. Scene Transformer needs separate treatment of task masks and missing-data masks; HiVT needs checks for missing neighbors, first trajectory steps, and absent valid lanes.
 

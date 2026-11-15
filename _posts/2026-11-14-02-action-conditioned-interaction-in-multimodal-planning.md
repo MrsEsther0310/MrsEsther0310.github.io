@@ -23,11 +23,19 @@ One design predicts neighboring agents from the observed scene and uses those pr
 
 ## 2. Three separate questions: modes, conditioning, and joint training
 
-Let S denote history and map context, tau_i the ith ego candidate, and Y a predicted neighbor future that may itself have multiple modes. Two conceptual interfaces are:
+Let $S$ denote history and map context, $\tau_i$ the $i$th ego candidate, and $Y$ a predicted neighbor future that may itself have multiple modes. Two conceptual interfaces are:
 
-Scene-conditioned prediction: Y = f_pred(S)
+Scene-conditioned prediction:
 
-Candidate-conditioned prediction: Y_i = f_pred(S, tau_i)
+$$
+Y = f_{\text{pred}}(S)
+$$
+
+Candidate-conditioned prediction:
+
+$$
+Y_i = f_{\text{pred}}(S, \tau_i)
+$$
 
 These are explanatory notations, not equations quoted from either paper. The distinction is whether a specified ego future enters the prediction path, not whether the model outputs one trajectory or many. A scene-conditioned model may still learn interactions from past motion and infer ego intent; candidate conditioning explicitly states the contemplated ego action.
 

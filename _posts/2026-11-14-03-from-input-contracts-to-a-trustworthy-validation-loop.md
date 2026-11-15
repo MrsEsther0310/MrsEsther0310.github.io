@@ -95,7 +95,13 @@ This method handles common slot swaps but does not guarantee globally optimal ma
 | Geometric candidate threshold | Establish possible object correspondence | Object identity or feature equality |
 | Numerical tolerance | Judge whether corresponding values are close | Complete fields and object coverage |
 
-For a pair of corresponding numerical values, use |a - b| <= atol + rtol |b|. Absolute tolerance governs near-zero values; relative tolerance scales with magnitude. Values such as 1e-5 can be starting points, but tolerances need calibration to field units, quantization, and engine precision. No numerical threshold excuses missing fields or unmatched valid objects.
+For a pair of corresponding numerical values, use
+
+$$
+|a-b| \leq \mathrm{atol} + \mathrm{rtol}\,|b|.
+$$
+
+Absolute tolerance governs near-zero values; relative tolerance scales with magnitude. Values such as $10^{-5}$ can be starting points, but tolerances need calibration to field units, quantization, and engine precision. No numerical threshold excuses missing fields or unmatched valid objects.
 
 A useful report retains maximum and mean absolute error, RMS error, percentiles, and per-channel statistics. Maximum error exposes local anomalies; percentiles describe distributions; channel statistics separate geometry, attributes, and encoding. Each statistic describes only the part that was compared.
 
